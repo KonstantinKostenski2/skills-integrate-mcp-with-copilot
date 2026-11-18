@@ -2,7 +2,29 @@ document.addEventListener("DOMContentLoaded", () => {
   const activitiesList = document.getElementById("activities-list");
   const activitySelect = document.getElementById("activity");
   const signupForm = document.getElementById("signup-form");
+  const signupContainer = document.getElementById("signup-container");
   const messageDiv = document.getElementById("message");
+  const authButton = document.getElementById("auth-button");
+  const loginModal = document.getElementById("login-modal");
+  const loginForm = document.getElementById("login-form");
+  const loginCancel = document.getElementById("login-cancel");
+  const loginError = document.getElementById("login-error");
+
+  let authHeader = sessionStorage.getItem("teacherAuth") || "";
+
+  function authFetch(url, options = {}) {
+    const headers = { ...(options.headers || {}) };
+    if (authHeader) {
+      headers.Authorization = `Basic ${authHeader}`;
+    }
+    return fetch(url, { ...options, headers });
+  }
+
+  function updateAuthUi() {
+    const isLoggedIn = Boolean(authHeader);
+    authButton.textContent = isLoggedIn ? "Logout" : "Login";
+    signupContainer.classList.toggle("hidden", !isLoggedIn);
+  }
 
   // Function to fetch activities from API
   async function fetchActivities() {
@@ -30,7 +52,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${details.participants
                   .map(
                     (email) =>
-                      `<li><span class="participant-email">${email}</span><button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button></li>`
+                      `<li><span class="participant-email">${email}</span>${
+                        authHeader
+                          ? `<button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button>`
+                          : ""
+                      }</li>`
                   )
                   .join("")}
               </ul>
@@ -74,7 +100,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const email = button.getAttribute("data-email");
 
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `/activities/${encodeURIComponent(
           activity
         )}/unregister?email=${encodeURIComponent(email)}`,
@@ -118,7 +144,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const activity = document.getElementById("activity").value;
 
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `/activities/${encodeURIComponent(
           activity
         )}/signup?email=${encodeURIComponent(email)}`,
@@ -155,6 +181,56 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  authButton.addEventListener("click", () => {
+    if (authHeader) {
+      authHeader = "";
+      sessionStorage.removeItem("teacherAuth");
+      updateAuthUi();
+      fetchActivities();
+      return;
+    }
+    loginModal.classList.remove("hidden");
+    document.getElementById("username").focus();
+  });
+
+  loginCancel.addEventListener("click", () => {
+    loginModal.classList.add("hidden");
+    loginError.classList.add("hidden");
+  });
+
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const username = document.getElementById("username").value;
+    const password = document.getElementById("password").value;
+    const encodedCredentials = btoa(`${username}:${password}`);
+
+    try {
+      const response = await fetch("/auth/login", {
+        headers: { Authorization: `Basic ${encodedCredentials}` },
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        loginError.textContent = result.detail || "Login failed";
+        loginError.classList.remove("hidden");
+        return;
+      }
+
+      authHeader = encodedCredentials;
+      sessionStorage.setItem("teacherAuth", authHeader);
+      loginModal.classList.add("hidden");
+      loginError.classList.add("hidden");
+      loginForm.reset();
+      updateAuthUi();
+      fetchActivities();
+    } catch (error) {
+      loginError.textContent = "Unable to log in. Please try again.";
+      loginError.classList.remove("hidden");
+      console.error("Login error:", error);
+    }
+  });
+
   // Initialize app
+  updateAuthUi();
   fetchActivities();
 });
